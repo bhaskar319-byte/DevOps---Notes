@@ -1,0 +1,300 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Ansible Interactive Motion Diagram</title>
+  <script src="https://www.gstatic.com/antigravity/web/dev/tailwindcss.min.js"></script>
+  <style>
+    @keyframes pulsePacket {
+      0% { offset-distance: 0%; opacity: 0; }
+      15% { opacity: 1; }
+      85% { opacity: 1; }
+      100% { offset-distance: 100%; opacity: 0; }
+    }
+    @keyframes pulseRing {
+      0% { transform: scale(0.95); opacity: 0.8; }
+      50% { transform: scale(1.05); opacity: 1; }
+      100% { transform: scale(0.95); opacity: 0.8; }
+    }
+    .packet-animate {
+      animation: pulsePacket 1.6s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+    }
+    .node-pulse {
+      animation: pulseRing 2s ease-in-out infinite;
+    }
+  </style>
+</head>
+<body class="bg-transparent text-[var(--foreground)] antialiased p-2 select-none">
+  <div class="bg-[var(--card)] text-[var(--foreground)] border border-[var(--border)] rounded-xl p-3 shadow-md max-w-4xl mx-auto">
+    
+    <!-- Header with Mode Selector -->
+    <div class="flex flex-wrap items-center justify-between gap-2 border-b border-[var(--border)] pb-2 mb-2">
+      <div class="flex items-center gap-2">
+        <span class="inline-flex items-center justify-center w-6 h-6 rounded-md bg-red-500/10 text-red-500 font-bold text-xs">⚡</span>
+        <div>
+          <h2 class="text-[var(--foreground)] font-bold text-sm tracking-wide flex items-center gap-1.5">
+            Ansible Motion Flow Simulator
+            <span class="text-[10px] px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 font-medium">LIVE ANIMATION</span>
+          </h2>
+        </div>
+      </div>
+      <div class="flex items-center gap-1 text-xs">
+        <button id="btn-mode-ping" onclick="setMode('ping')" class="px-2.5 py-1 rounded-md font-medium transition-all bg-[var(--primary)] text-[var(--primary-foreground)] shadow-xs">
+          Cluster Ping
+        </button>
+        <button id="btn-mode-dev" onclick="setMode('dev')" class="px-2.5 py-1 rounded-md font-medium transition-all bg-[var(--muted)] hover:bg-[var(--accent)] text-[var(--muted-foreground)]">
+          Target DEV Only
+        </button>
+        <button id="btn-mode-prod" onclick="setMode('prod')" class="px-2.5 py-1 rounded-md font-medium transition-all bg-[var(--muted)] hover:bg-[var(--accent)] text-[var(--muted-foreground)]">
+          Target PROD Only
+        </button>
+        <button id="btn-mode-ssh" onclick="setMode('ssh')" class="px-2.5 py-1 rounded-md font-medium transition-all bg-[var(--muted)] hover:bg-[var(--accent)] text-[var(--muted-foreground)]">
+          SSH Handshake
+        </button>
+      </div>
+    </div>
+
+    <!-- Active Command Banner -->
+    <div class="flex items-center justify-between bg-slate-900 text-slate-100 rounded-lg px-3 py-1.5 font-mono text-xs mb-2 shadow-inner">
+      <div class="flex items-center gap-2 overflow-hidden">
+        <span class="text-emerald-400 font-bold">$</span>
+        <span id="cmd-display" class="truncate text-slate-200">ansible all -m ping</span>
+      </div>
+      <span id="status-badge" class="px-2 py-0.5 rounded text-[11px] font-semibold bg-emerald-500/20 text-emerald-400 shrink-0">
+        Pushing over SSH...
+      </span>
+    </div>
+
+    <!-- SVG Motion Diagram Canvas -->
+    <div class="relative w-full h-[220px] bg-slate-950/5 dark:bg-slate-900/40 rounded-lg border border-[var(--border)] overflow-hidden flex items-center justify-center">
+      <svg id="motion-svg" viewBox="0 0 760 220" class="w-full h-full">
+        <defs>
+          <linearGradient id="gradMaster" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stop-color="#1E3A8A" />
+            <stop offset="100%" stop-color="#0F172A" />
+          </linearGradient>
+          <linearGradient id="gradProd" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stop-color="#065F46" />
+            <stop offset="100%" stop-color="#042F2E" />
+          </linearGradient>
+          <linearGradient id="gradDev" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stop-color="#9A3412" />
+            <stop offset="100%" stop-color="#451A03" />
+          </linearGradient>
+          <filter id="glow">
+            <feGaussianBlur stdDeviation="3" result="coloredBlur"/>
+            <feMerge>
+              <feMergeNode in="coloredBlur"/>
+              <feMergeNode in="SourceGraphic"/>
+            </feMerge>
+          </filter>
+        </defs>
+
+        <!-- Connection Wire Paths -->
+        <path id="wire-prod1" d="M 170 110 C 340 110, 360 40, 560 40" fill="none" stroke="#94A3B8" stroke-width="2" stroke-dasharray="4 4" class="opacity-60" />
+        <path id="wire-prod2" d="M 170 110 C 340 110, 360 85, 560 85" fill="none" stroke="#94A3B8" stroke-width="2" stroke-dasharray="4 4" class="opacity-60" />
+        <path id="wire-dev1"  d="M 170 110 C 340 110, 360 135, 560 135" fill="none" stroke="#94A3B8" stroke-width="2" stroke-dasharray="4 4" class="opacity-60" />
+        <path id="wire-dev2"  d="M 170 110 C 340 110, 360 180, 560 180" fill="none" stroke="#94A3B8" stroke-width="2" stroke-dasharray="4 4" class="opacity-60" />
+
+        <!-- Animated Data Packets (Moving along wires) -->
+        <circle id="pkt-prod1" r="5" fill="#38BDF8" filter="url(#glow)">
+          <animateMotion dur="1.8s" repeatCount="indefinite" path="M 170 110 C 340 110, 360 40, 560 40" />
+        </circle>
+        <circle id="pkt-prod2" r="5" fill="#38BDF8" filter="url(#glow)">
+          <animateMotion dur="1.8s" repeatCount="indefinite" path="M 170 110 C 340 110, 360 85, 560 85" />
+        </circle>
+        <circle id="pkt-dev1" r="5" fill="#FB923C" filter="url(#glow)">
+          <animateMotion dur="1.8s" repeatCount="indefinite" path="M 170 110 C 340 110, 360 135, 560 135" />
+        </circle>
+        <circle id="pkt-dev2" r="5" fill="#FB923C" filter="url(#glow)">
+          <animateMotion dur="1.8s" repeatCount="indefinite" path="M 170 110 C 340 110, 360 180, 560 180" />
+        </circle>
+
+        <!-- Master Node (Left) -->
+        <g transform="translate(30, 60)" class="cursor-pointer" onclick="triggerPulse()">
+          <rect width="140" height="100" rx="10" fill="url(#gradMaster)" stroke="#38BDF8" stroke-width="2" />
+          <rect x="8" y="8" width="124" height="24" rx="5" fill="#1E293B" />
+          <text x="70" y="24" fill="#FFFFFF" font-size="11" font-weight="bold" text-anchor="middle" font-family="sans-serif">ANSIBLE MASTER</text>
+          <text x="70" y="50" fill="#94A3B8" font-size="9.5" text-anchor="middle" font-family="sans-serif">Amazon Linux 2023</text>
+          <text x="70" y="66" fill="#38BDF8" font-size="9" text-anchor="middle" font-family="monospace">ansible --version</text>
+          <rect x="25" y="74" width="90" height="18" rx="4" fill="#0369A1" />
+          <text x="70" y="86" fill="#FFFFFF" font-size="8.5" font-weight="bold" text-anchor="middle">PUSH CONTROLLER</text>
+        </g>
+
+        <!-- Worker Nodes (Right) -->
+        <!-- PROD-1 -->
+        <g id="box-prod1" transform="translate(560, 20)">
+          <rect width="170" height="38" rx="6" fill="url(#gradProd)" stroke="#10B981" stroke-width="1.5" />
+          <text x="12" y="18" fill="#A7F3D0" font-size="10.5" font-weight="bold">prod-1</text>
+          <text x="12" y="30" fill="#6EE7B7" font-size="8.5" font-family="monospace">172.31.20.40</text>
+          <rect id="badge-prod1" x="105" y="8" width="55" height="22" rx="4" fill="#064E3B" stroke="#059669" />
+          <text id="txt-prod1" x="132" y="22" fill="#34D399" font-size="9" font-weight="bold" text-anchor="middle">PONG</text>
+        </g>
+
+        <!-- PROD-2 -->
+        <g id="box-prod2" transform="translate(560, 66)">
+          <rect width="170" height="38" rx="6" fill="url(#gradProd)" stroke="#10B981" stroke-width="1.5" />
+          <text x="12" y="18" fill="#A7F3D0" font-size="10.5" font-weight="bold">prod-2</text>
+          <text x="12" y="30" fill="#6EE7B7" font-size="8.5" font-family="monospace">172.31.21.25</text>
+          <rect id="badge-prod2" x="105" y="8" width="55" height="22" rx="4" fill="#064E3B" stroke="#059669" />
+          <text id="txt-prod2" x="132" y="22" fill="#34D399" font-size="9" font-weight="bold" text-anchor="middle">PONG</text>
+        </g>
+
+        <!-- DEV-1 -->
+        <g id="box-dev1" transform="translate(560, 116)">
+          <rect width="170" height="38" rx="6" fill="url(#gradDev)" stroke="#F97316" stroke-width="1.5" />
+          <text x="12" y="18" fill="#FED7AA" font-size="10.5" font-weight="bold">dev-1</text>
+          <text x="12" y="30" fill="#FDBA74" font-size="8.5" font-family="monospace">172.31.31.77</text>
+          <rect id="badge-dev1" x="105" y="8" width="55" height="22" rx="4" fill="#7C2D12" stroke="#EA580C" />
+          <text id="txt-dev1" x="132" y="22" fill="#FB923C" font-size="9" font-weight="bold" text-anchor="middle">PONG</text>
+        </g>
+
+        <!-- DEV-2 -->
+        <g id="box-dev2" transform="translate(560, 162)">
+          <rect width="170" height="38" rx="6" fill="url(#gradDev)" stroke="#F97316" stroke-width="1.5" />
+          <text x="12" y="18" fill="#FED7AA" font-size="10.5" font-weight="bold">dev-2</text>
+          <text x="12" y="30" fill="#FDBA74" font-size="8.5" font-family="monospace">172.31.22.114</text>
+          <rect id="badge-dev2" x="105" y="8" width="55" height="22" rx="4" fill="#7C2D12" stroke="#EA580C" />
+          <text id="txt-dev2" x="132" y="22" fill="#FB923C" font-size="9" font-weight="bold" text-anchor="middle">PONG</text>
+        </g>
+      </svg>
+    </div>
+
+    <!-- Live Terminal Simulation Output Box -->
+    <div class="mt-2 bg-slate-950 text-slate-300 rounded-lg p-2.5 font-mono text-[11px] leading-relaxed border border-slate-800 shadow-inner overflow-hidden">
+      <div class="flex items-center justify-between text-slate-500 text-[10px] pb-1 border-b border-slate-800/80 mb-1">
+        <span>STDOUT STREAM (MASTER NODE)</span>
+        <span class="text-emerald-400">IDEMPOTENT: TRUE</span>
+      </div>
+      <pre id="stdout-content" class="overflow-x-auto text-emerald-400">prod-1 | SUCCESS => { "changed": false, "ping": "pong" }
+prod-2 | SUCCESS => { "changed": false, "ping": "pong" }
+dev-1  | SUCCESS => { "changed": false, "ping": "pong" }
+dev-2  | SUCCESS => { "changed": false, "ping": "pong" }</pre>
+    </div>
+
+  </div>
+
+  <script>
+    let currentMode = 'ping';
+
+    function setMode(mode) {
+      currentMode = mode;
+      
+      // Update buttons
+      ['ping', 'dev', 'prod', 'ssh'].forEach(m => {
+        const btn = document.getElementById('btn-mode-' + m);
+        if (m === mode) {
+          btn.className = "px-2.5 py-1 rounded-md font-medium transition-all bg-[var(--primary)] text-[var(--primary-foreground)] shadow-xs";
+        } else {
+          btn.className = "px-2.5 py-1 rounded-md font-medium transition-all bg-[var(--muted)] hover:bg-[var(--accent)] text-[var(--muted-foreground)]";
+        }
+      });
+
+      const cmdDisplay = document.getElementById('cmd-display');
+      const statusBadge = document.getElementById('status-badge');
+      const stdout = document.getElementById('stdout-content');
+      
+      const pktProd1 = document.getElementById('pkt-prod1');
+      const pktProd2 = document.getElementById('pkt-prod2');
+      const pktDev1 = document.getElementById('pkt-dev1');
+      const pktDev2 = document.getElementById('pkt-dev2');
+
+      const txtProd1 = document.getElementById('txt-prod1');
+      const txtProd2 = document.getElementById('txt-prod2');
+      const txtDev1 = document.getElementById('txt-dev1');
+      const txtDev2 = document.getElementById('txt-dev2');
+
+      if (mode === 'ping') {
+        cmdDisplay.textContent = "ansible all -m ping";
+        statusBadge.textContent = "All 4 Nodes Active";
+        statusBadge.className = "px-2 py-0.5 rounded text-[11px] font-semibold bg-emerald-500/20 text-emerald-400 shrink-0";
+        
+        pktProd1.style.display = "block";
+        pktProd2.style.display = "block";
+        pktDev1.style.display = "block";
+        pktDev2.style.display = "block";
+
+        txtProd1.textContent = "PONG";
+        txtProd2.textContent = "PONG";
+        txtDev1.textContent = "PONG";
+        txtDev2.textContent = "PONG";
+
+        stdout.className = "overflow-x-auto text-emerald-400";
+        stdout.textContent = 
+`prod-1 | SUCCESS => { "changed": false, "ping": "pong" }
+prod-2 | SUCCESS => { "changed": false, "ping": "pong" }
+dev-1  | SUCCESS => { "changed": false, "ping": "pong" }
+dev-2  | SUCCESS => { "changed": false, "ping": "pong" }`;
+      } 
+      else if (mode === 'dev') {
+        cmdDisplay.textContent = "ansible dev -a 'yum install git -y'";
+        statusBadge.textContent = "Targeting [dev] Only";
+        statusBadge.className = "px-2 py-0.5 rounded text-[11px] font-semibold bg-orange-500/20 text-orange-400 shrink-0";
+
+        pktProd1.style.display = "none";
+        pktProd2.style.display = "none";
+        pktDev1.style.display = "block";
+        pktDev2.style.display = "block";
+
+        txtProd1.textContent = "SKIPPED";
+        txtProd2.textContent = "SKIPPED";
+        txtDev1.textContent = "GIT INSTALLED";
+        txtDev2.textContent = "GIT INSTALLED";
+
+        stdout.className = "overflow-x-auto text-orange-400";
+        stdout.textContent = 
+`dev-1 | CHANGED => { "changed": true, "rc": 0, "stdout": "Installed: git.x86_64 0:2.40.1" }
+dev-2 | CHANGED => { "changed": true, "rc": 0, "stdout": "Installed: git.x86_64 0:2.40.1" }
+[prod-1 & prod-2 were filtered out by group selector 'dev']`;
+      }
+      else if (mode === 'prod') {
+        cmdDisplay.textContent = "ansible prod -a 'systemctl restart httpd'";
+        statusBadge.textContent = "Targeting [prod] Only";
+        statusBadge.className = "px-2 py-0.5 rounded text-[11px] font-semibold bg-emerald-500/20 text-emerald-400 shrink-0";
+
+        pktProd1.style.display = "block";
+        pktProd2.style.display = "block";
+        pktDev1.style.display = "none";
+        pktDev2.style.display = "none";
+
+        txtProd1.textContent = "RESTARTED";
+        txtProd2.textContent = "RESTARTED";
+        txtDev1.textContent = "SKIPPED";
+        txtDev2.textContent = "SKIPPED";
+
+        stdout.className = "overflow-x-auto text-emerald-400";
+        stdout.textContent = 
+`prod-1 | CHANGED => { "changed": true, "rc": 0, "msg": "httpd.service restarted" }
+prod-2 | CHANGED => { "changed": true, "rc": 0, "msg": "httpd.service restarted" }
+[dev-1 & dev-2 were filtered out by group selector 'prod']`;
+      }
+      else if (mode === 'ssh') {
+        cmdDisplay.textContent = "ssh-copy-id root@<worker-ip>";
+        statusBadge.textContent = "Key Distribution";
+        statusBadge.className = "px-2 py-0.5 rounded text-[11px] font-semibold bg-purple-500/20 text-purple-400 shrink-0";
+
+        pktProd1.style.display = "block";
+        pktProd2.style.display = "block";
+        pktDev1.style.display = "block";
+        pktDev2.style.display = "block";
+
+        txtProd1.textContent = "🔑 UNLOCKED";
+        txtProd2.textContent = "🔑 UNLOCKED";
+        txtDev1.textContent = "🔑 UNLOCKED";
+        txtDev2.textContent = "🔑 UNLOCKED";
+
+        stdout.className = "overflow-x-auto text-purple-400";
+        stdout.textContent = 
+`Number of key(s) added: 4
+Now try logging into the machines, with: "ssh 'root@172.31.20.40'"
+and check to make sure that only the key(s) you wanted were added.`;
+      }
+    }
+
+    function triggerPulse() {
+      // Re-trigger visual feedback
+      setMode(currentMode);
+    }
+  </script>
+</body>
+</html>
